@@ -1,0 +1,85 @@
+image: python:latest
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip
+
+stages:
+  - code_quality
+  - test
+  - deploy
+
+linter_flake8:
+  stage: code_quality
+  before_script:
+    - python -m pip install flake8 flake8-json pytest
+    - python -m pip install obfuscator-core --index-url https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.softcom.su/api/v4/projects/480/packages/pypi/simple --no-deps
+  script:
+    - flake8 flake8 --format=codeclimate --output-file=flake8.json --exit-zero
+  artifacts:
+     reports:
+        codequality: [flake8.json]       
+     expire_in: 1 week
+  tags:
+    - Linux
+
+linter_pylint:
+  stage: code_quality
+  before_script:
+    - python -m pip install pylint pylint-codeclimate pytest
+    - python -m pip install obfuscator-core --index-url https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.softcom.su/api/v4/projects/480/packages/pypi/simple --no-deps
+  script:
+    - pylint --output-format=codeclimate:pylint.json src tests --exit-zero
+  artifacts:
+     reports:
+        codequality: [pylint.json]       
+     expire_in: 1 week
+  tags:
+    - Linux
+
+security:
+  stage: code_quality
+  before_script:
+    - python -m pip install bandit pytest
+    - python -m pip install obfuscator-core --index-url https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.softcom.su/api/v4/projects/480/packages/pypi/simple --no-deps
+  script:
+    - bandit src -r -o bandit.json --exit-zero
+  artifacts:
+     reports:
+        codequality: [bandit.json]       
+     expire_in: 1 week
+  tags:
+    - Linux
+
+test:
+  stage: test
+  before_script:
+    - python -m pip install pytest pytest-cov
+    - python -m pip install obfuscator-core --index-url https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.softcom.su/api/v4/projects/480/packages/pypi/simple --no-deps
+    - export gitlab_access_token=${CI_JOB_TOKEN}
+  script:
+    - python -m pytest --cov=./src/ --cov-report=xml --cov-report=term --junitxml=report.xml tests
+  artifacts:
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+  tags:
+    - Linux
+
+deploy:
+  stage: deploy
+  before_script:
+    - pip install build twine
+  script:
+    - python -m build
+    - TWINE_PASSWORD=${CI_JOB_TOKEN} TWINE_USERNAME=gitlab-ci-token python -m twine upload --repository-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi dist/*
+  tags:
+    - Linux
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
